@@ -1,0 +1,31 @@
+{
+  "_comment": "Resmi MTV tarifeleri her yıl yenilenir. Değerleri güncel tutmak için resmi kaynakları kontrol edin.",
+  "yil": 2025,
+  "otomobil": {
+    "pre2018": [
+      { "yas_araligi": "1-3", "motor_araligi": "0-1300", "tutar": 1000 },
+      { "yas_araligi": "4-6", "motor_araligi": "0-1300", "tutar": 800 }
+    ],
+    "post2018": [
+      {
+        "yas_araligi": "1-3",
+        "motor_araligi": "0-1300",
+        "deger_bantlari": [
+          { "min": 0, "max": 500000, "tutar": 2000 },
+          { "min": 500001, "max": 800000, "tutar": 2500 }
+        ]
+      }
+    ]
+  },
+  "motosiklet": [
+    { "yas_araligi": "1-3", "motor_araligi": "0-250", "tutar": 200 }
+  ],
+  "minibus": [
+    { "yas_araligi": "1-6", "koltuk_sayisi": "0-15", "tutar": 500 }
+  ],
+  "otobus": [],
+  "kamyon_kamyonet": [],
+  "ceyrek_oranlar": {
+    "elektrikli_indirim_orani": 0.25
+  }
+}
