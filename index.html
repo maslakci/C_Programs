@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTV Hesaplama – Maşlakcı Sigorta</title>
+<meta name="description" content="Maşlakcı Sigorta için Motorlu Taşıtlar Vergisi (MTV) hesaplayıcı.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;700&display=swap');
+body{font-family:'Poppins',sans-serif;margin:0;background:#f5f5f5;}
+.container{max-width:600px;margin:auto;padding:1rem;}
+form{display:grid;grid-template-columns:1fr;gap:0.5rem;}
+input,select,button{padding:0.5rem;font-size:1rem;}
+button{background:#00A86B;color:#fff;border:none;cursor:pointer;}
+.output{margin-top:1rem;background:#fff;padding:1rem;border-radius:4px;}
+@media(min-width:600px){form{grid-template-columns:1fr 1fr;}form .full{grid-column:span 2;}}
+</style>
+</head>
+<body>
+<!-- mtv_tarife.json'ı /assets/json altına koyun ve loadTarife('/assets/json/mtv_tarife.json') yolunu güncelleyin. -->
+<!-- Harici JSON'u aynı domain altında barındırın; aksi halde CORS ayarlarına dikkat edin. -->
+<div class="container">
+<h1>MTV Hesaplama</h1>
+<form id="mtvForm">
+<label for="aracTuru">Araç Türü</label>
+<select id="aracTuru" required>
+<option value="otomobil">Otomobil</option>
+<option value="motosiklet">Motosiklet</option>
+<option value="minibus">Minibüs</option>
+</select>
+<label for="tescilTarihi">İlk Tescil Tarihi</label>
+<input type="date" id="tescilTarihi">
+<label><input type="checkbox" id="yasManualChk"> Yaşı manuel gir</label>
+<label for="aracYasi" id="yasLabel">Araç Yaşı</label>
+<input type="number" id="aracYasi" min="0" disabled>
+<label for="motorHacmi">Motor Hacmi (cc)</label>
+<input type="number" id="motorHacmi" min="0" required>
+<label for="aracDegeri" id="degerLabel" class="full" style="display:none;">Araç Değeri (₺)</label>
+<input type="number" id="aracDegeri" class="full" style="display:none;" min="0">
+<label for="yakitTipi">Yakıt/Tip</label>
+<select id="yakitTipi">
+<option value="benzin">Benzin</option>
+<option value="dizel">Dizel</option>
+<option value="hibrit">Hibrit</option>
+<option value="elektrik">Elektrik</option>
+</select>
+<label for="taksitSayisi">Taksit Sayısı</label>
+<select id="taksitSayisi">
+<option value="1">1</option>
+<option value="2">2</option>
+</select>
+<label for="il">İl/Plaka</label>
+<input type="text" id="il" placeholder="İstanbul">
+<label for="yil">Yıl</label>
+<input type="number" id="yil">
+<button type="button" id="hesaplaBtn" class="full">Hesapla</button>
+</form>
+<div id="sonuc" class="output" aria-live="polite"></div>
+<p class="full" id="uyari">Bilgilendirme amaçlıdır, nihai tutar resmi kurumlarca belirlenir. Tarifeler yıllık değişir.</p>
+<p class="full" id="tarifeUyari" style="color:red;"></p>
+</div>
+<script type="application/ld+json">
+{
+"@context":"https://schema.org",
+"@type":"FAQPage",
+"mainEntity":[
+{"@type":"Question","name":"MTV nasıl hesaplanır?","acceptedAnswer":{"@type":"Answer","text":"Araç türü, yaşı, motor hacmi ve değer bandı gibi parametrelere göre ilgili tarifeden vergi tutarı bulunur."}},
+{"@type":"Question","name":"2018 sonrası değer bandı nedir?","acceptedAnswer":{"@type":"Answer","text":"01.01.2018 sonrası tescilli otomobillerde araç değerine göre ek vergi dilimleri uygulanır."}},
+{"@type":"Question","name":"Elektrikli araç MTV nasıl?","acceptedAnswer":{"@type":"Answer","text":"Elektrikli araçlar için MTV, motor gücü karşılığı tablolar ya da belirli indirim oranları üzerinden hesaplanır."}}
+]
+}
+</script>
+<script>
+/**
+ * mtv_tarife.json'dan verileri yükler.
+ * @param {string} url - JSON dosyasının yolu.
+ * @returns {Promise<object>} Tarife verisi.
+ */
+async function loadTarife(url){
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return await res.json();
+  }catch(e){
+    document.getElementById('tarifeUyari').textContent = 'Tarife yüklenemedi, örnek değerler kullanılıyor.';
+    return {
+      yil: new Date().getFullYear(),
+      otomobil:{
+        pre2018:[{yas_araligi:"1-3",motor_araligi:"0-1300",tutar:1000}],
+        post2018:[{yas_araligi:"1-3",motor_araligi:"0-1300",deger_bantlari:[{min:0,max:500000,tutar:2000},{min:500001,max:800000,tutar:2500}]}]
+      },
+      motosiklet:[{yas_araligi:"1-3",motor_araligi:"0-250",tutar:200}],
+      ceyrek_oranlar:{elektrikli_indirim_orani:0.25}
+    };
+  }
+}
+/**
+ * Tarihten yaşı çıkarır.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {number} Yaş.
+ */
+function deriveAgeFromDate(dateStr){
+  if(!dateStr) return NaN;
+  const d = new Date(dateStr);
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  if(now.getMonth()<d.getMonth() || (now.getMonth()==d.getMonth() && now.getDate()<d.getDate())) age--;
+  return age;
+}
+/** Değerin hangi aralıkta olduğunu bulur. */
+function matchBracket(val, brackets, key){
+  for(const b of brackets){
+    const range = b[key].split('-').map(Number);
+    if(val>=range[0] && val<=range[1]) return b;
+  }
+  return null;
+}
+/** Otomobil 2018 öncesi hesaplama */
+function calcCarPre2018(yas, motor){
+  const yasDilimi = tarife.otomobil.pre2018.filter(b=>{
+    const range = b.yas_araligi.split('-').map(Number);
+    return yas>=range[0] && yas<=range[1];
+  });
+  const motorDilimi = matchBracket(motor, yasDilimi, 'motor_araligi');
+  return motorDilimi? motorDilimi.tutar : null;
+}
+/** Otomobil 2018 sonrası hesaplama */
+function calcCarPost2018(yas, motor, deger){
+  const yasDilimi = tarife.otomobil.post2018.filter(b=>{
+    const range = b.yas_araligi.split('-').map(Number);
+    return yas>=range[0] && yas<=range[1];
+  });
+  const motorDilimi = matchBracket(motor, yasDilimi, 'motor_araligi');
+  if(!motorDilimi) return null;
+  const degerBandi = motorDilimi.deger_bantlari.find(db=> deger>=db.min && deger<=db.max);
+  return degerBandi? degerBandi.tutar : null;
+}
+/** Motosiklet hesaplama */
+function calcBike(yas, motor){
+  const yasDilimi = tarife.motosiklet.filter(b=>{
+    const range = b.yas_araligi.split('-').map(Number);
+    return yas>=range[0] && yas<=range[1];
+  });
+  const motorDilimi = matchBracket(motor, yasDilimi, 'motor_araligi');
+  return motorDilimi? motorDilimi.tutar : null;
+}
+/** TRY formatlayıcı */
+function formatCurrency(val){
+  return new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY'}).format(val);
+}
+let tarife = {};
+loadTarife('mtv_tarife.json').then(data=>{
+  tarife = data;
+  document.getElementById('yil').value = data.yil;
+});
+const form = document.getElementById('mtvForm');
+const tescil = document.getElementById('tescilTarihi');
+const yasInput = document.getElementById('aracYasi');
+const yasManualChk = document.getElementById('yasManualChk');
+const aracTuru = document.getElementById('aracTuru');
+const aracDegeri = document.getElementById('aracDegeri');
+const degerLabel = document.getElementById('degerLabel');
+const sonuc = document.getElementById('sonuc');
+tescil.addEventListener('change',()=>{if(!yasManualChk.checked) yasInput.value = deriveAgeFromDate(tescil.value);});
+yasManualChk.addEventListener('change',()=>{yasInput.disabled=!yasManualChk.checked;if(!yasManualChk.checked) yasInput.value=deriveAgeFromDate(tescil.value);});
+function toggleDeger(){
+  const tYil = new Date(tescil.value).getFullYear();
+  const show = aracTuru.value==='otomobil' && tYil>=2018;
+  aracDegeri.style.display = degerLabel.style.display = show?'block':'none';
+  if(!show) aracDegeri.value='';
+}
+aracTuru.addEventListener('change',toggleDeger);
+tescil.addEventListener('change',toggleDeger);
+document.getElementById('hesaplaBtn').addEventListener('click', hesapla);
+form.addEventListener('input', debounce(hesapla,500));
+function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms);};}
+function hesapla(){
+  const yas = Number(yasInput.value);
+  const motor = Number(document.getElementById('motorHacmi').value);
+  const tur = aracTuru.value;
+  const deger = Number(aracDegeri.value);
+  const yil = Number(document.getElementById('yil').value)||tarife.yil;
+  const taksit = Number(document.getElementById('taksitSayisi').value);
+  const yakit = document.getElementById('yakitTipi').value;
+  if(isNaN(yas)||isNaN(motor)){sonuc.textContent='Eksik veya geçersiz giriş.';return;}
+  let tutar=null;
+  if(tur==='otomobil'){
+    const tYil = new Date(tescil.value).getFullYear();
+    if(tescil.value && tYil>=2018){
+      if(!deger){sonuc.textContent='Araç değeri gerekli.';return;}
+      tutar = calcCarPost2018(yas,motor,deger);
+    }else{
+      tutar = calcCarPre2018(yas,motor);
+    }
+    if(yakit==='elektrik' || yakit==='hibrit'){
+      const oran = tarife.ceyrek_oranlar?.elektrikli_indirim_orani||0;
+      tutar = tutar*(1-oran);
+    }
+  }else if(tur==='motosiklet'){
+    tutar = calcBike(yas,motor);
+  }else{
+    sonuc.textContent='Seçilen tür desteklenmiyor.';return;
+  }
+  if(tutar==null){sonuc.textContent='Uygun tarife bulunamadı, tarife güncellenmeli.';return;}
+  const toplam=formatCurrency(tutar);
+  const taksitTutari=formatCurrency(tutar/taksit);
+  sonuc.innerHTML = `<strong>Yıllık MTV:</strong> ${toplam}<br><strong>${taksit===1?'Taksit':'1. Taksit'}:</strong> ${taksitTutari}`+(taksit===2?`<br><strong>2. Taksit:</strong> ${taksitTutari}`:'');
+  window.dataLayer=window.dataLayer||[];
+  window.dataLayer.push({event:'mtv_calculated',tutar,arac_turu:tur,yas,motor_hacmi:motor,yil,taksit});
+}
+console.assert(matchBracket(1499,[{motor_araligi:"0-1500"}],"motor_araligi"),'Motor aralığı bulunamadı');
+console.assert(calcCarPre2018(10,1400)===1000,'pre2018 hesaplama');
+console.assert(calcCarPost2018(2,1200,600000)===2500,'post2018 değer bandı');
+console.assert(deriveAgeFromDate('2024-01-01')>=0,'Yaş hesaplama');
+console.assert(calcBike(2,200)===200,'Motosiklet aralığı');
+loadTarife('nonexist.json').then(t=>console.assert(t.otomobil,'Fallback çalışmalı'));
+</script>
+</body>
+</html>
